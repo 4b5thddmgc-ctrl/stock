@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#2f6f5e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Stock">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%232f6f5e'/%3E%3Cpath d='M110 150h60l40 170h190l30-120H190' fill='none' stroke='%23f4f1ea' stroke-width='26' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='240' cy='380' r='26' fill='%23f4f1ea'/%3E%3Ccircle cx='380' cy='380' r='26' fill='%23f4f1ea'/%3E%3C/svg%3E">
+<title>Stock famille</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f4f1ea;color:#222;padding-bottom:84px}
+header{background:#2f6f5e;color:#fff;padding:14px 16px;position:sticky;top:0;z-index:5}
+header h1{margin:0;font-size:20px}
+#sync{font-size:12px;opacity:.9}
+#recherche{width:100%;margin-top:10px;padding:12px;border:0;border-radius:10px;font-size:16px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ddd;z-index:5}
+nav button{flex:1;padding:14px 2px;border:0;background:#fff;font-size:13px;color:#555}
+nav button.actif{color:#2f6f5e;font-weight:700;border-top:3px solid #2f6f5e}
+section.page{display:none;padding:12px}
+section.page.actif{display:block}
+h2{font-size:15px;color:#2f6f5e;text-transform:uppercase;margin:18px 4px 6px}
+.carte{background:#fff;border-radius:12px;padding:12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 2px #0001}
+.carte .nom{flex:1;font-size:17px}
+.carte .info{font-size:12px;color:#777;display:block}
+.carte.bas,.carte.bientot{border-left:6px solid #e08a1e}
+.carte.vide,.carte.perime{border-left:6px solid #c0392b}
+.btn{width:46px;height:46px;border-radius:50%;border:0;font-size:26px;font-weight:700;color:#fff;flex-shrink:0}
+.moins{background:#c0392b}
+.plus{background:#2f6f5e}
+.qte{min-width:28px;text-align:center;font-size:20px;font-weight:700}
+.gros{width:100%;padding:14px;border:0;border-radius:12px;background:#2f6f5e;color:#fff;font-size:17px;margin:8px 0}
+.gris{background:#888}
+.rouge{background:#c0392b}
+label{display:block;margin:10px 0 4px;font-size:14px;color:#555}
+input,select,textarea{width:100%;padding:12px;border:1px solid #ccc;border-radius:10px;font-size:16px;background:#fff;font-family:inherit}
+.coche{display:flex;align-items:center;gap:10px}
+.coche input{width:26px;height:26px;flex-shrink:0}
+.fait .nom{text-decoration:line-through;color:#999}
+#fond{position:fixed;inset:0;background:#0007;display:none;z-index:10;align-items:flex-end}
+#fond.ouvert{display:flex}
+#fenetre{background:#f4f1ea;width:100%;max-height:90vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px}
+.vide-msg{text-align:center;color:#888;padding:30px}
+.petit{width:auto;margin:0;padding:10px 14px;font-size:15px}
+.note{font-size:13px;color:#666;margin:6px 4px}
+</style>
+</head>
+<body>
+<header>
+<h1>Stock famille</h1>
+<div id="sync">Démarrage...</div>
+<input id="recherche" type="search" placeholder="Rechercher un produit">
+</header>
+
+<section class="page actif" id="p-stock"></section>
+<section class="page" id="p-avant"></section>
+<section class="page" id="p-courses"></section>
+<section class="page" id="p-univers"></section>
+<section class="page" id="p-reglages"></section>
+
+<nav>
+<button data-p="stock" class="actif">Stock</button>
+<button data-p="avant">Avant courses</button>
+<button data-p="courses">Courses</button>
+<button data-p="univers">Univers</button>
+<button data-p="reglages">Réglages</button>
+</nav>
+
+<div id="fond"><div id="fenetre"></div></div>
+
+<script>
+const SUPABASE_URL = "https://rppefxifbccubddmfsql.supabase.co";
+const SUPABASE_CLE = "sb_publishable_1pFptrM4Vn1JpTbUtsAD_A_sAd7IGfV";
+
+const CATEGORIES = ["Conserves","Gâteaux et biscuits","Produits frais","Surgelés","Boissons","Hygiène","Autres"];
+const DEPART = [
+ ["Conserve de haricots verts","Conserves","boîte",2,0],
+ ["Conserve de haricots rouges","Conserves","boîte",2,0],
+ ["Conserve de maïs","Conserves","boîte",2,0],
+ ["Pâtes","Conserves","paquet",3,0],
+ ["Riz","Conserves","paquet",2,0],
+ ["Madeleines","Gâteaux et biscuits","paquet",1,0],
+ ["Gâteau au chocolat","Gâteaux et biscuits","gâteau",1,0],
+ ["Biscuits","Gâteaux et biscuits","paquet",2,0],
+ ["Yaourts nature","Produits frais","pot",4,1],
+ ["Yaourts aux fruits","Produits frais","pot",4,1],
+ ["Fromage","Produits frais","pièce",1,1],
+ ["Lait","Boissons","brique",3,0],
+ ["Oeufs","Produits frais","boîte",1,1],
+ ["Jus de fruits","Boissons","bouteille",2,0]
+];
+
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+function etat(t){ const el = document.getElementById("sync"); if(el) el.textContent = t; }
+window.addEventListener("error", e=>etat("Erreur : "+e.message));
+
+let code = lsGet("codeFamille");
+let data = lireLocal();
+let derniereMaj = lsGet("derniereMaj") || "";
+let envoiEnCours = false, aEnvoyer = false;
+
+function donneesDepart(){
+ const d = {univers:{}, courses:{}};
+ DEPART.forEach((u,i)=>{ d.univers["u"+i] = {nom:u[0],cat:u[1],unite:u[2],seuil:u[3],frais:!!u[4],qte:0,lots:[]}; });
+ return d;
+}
+function lireLocal(){
+ try{ const d = JSON.parse(lsGet("stockFamille")); if(d && d.univers) return {univers:d.univers, courses:d.courses||{}}; }catch(e){}
+ return donneesDepart();
+}
+
+function enTetes(){
+ const h = {"apikey":SUPABASE_CLE, "Content-Type":"application/json"};
+ if(SUPABASE_CLE.indexOf("eyJ")===0) h["Authorization"] = "Bearer "+SUPABASE_CLE;
+ return h;
+}
+function urlTable(){ return SUPABASE_URL.replace(/\/$/,"") + "/rest/v1/stock_famille"; }
+function avecDelai(url,opt){
+ const c = new AbortController(); const t = setTimeout(()=>c.abort(), 10000);
+ return fetch(url, Object.assign({signal:c.signal}, opt)).finally(()=>clearTimeout(t));
+}
+function msg(e){ return e && e.name==="AbortError" ? "délai dépassé" : (e && e.message) || "erreur"; }
+
+async function lireServeur(){
+ const r = await avecDelai(urlTable()+"?code=eq."+encodeURIComponent(code)+"&select=donnees,maj", {headers:enTetes()});
+ if(!r.ok) throw new Error("lecture refusée ("+r.status+")");
+ const l = await r.json();
+ return l.length ? l[0] : null;
+}
+async function ecrireServeur(){
+ const maj = new Date().toISOString();
+ const h = enTetes(); h["Prefer"] = "resolution=merge-duplicates,return=minimal";
+ const r = await avecDelai(urlTable()+"?on_conflict=code", {method:"POST", headers:h, body:JSON.stringify({code:code, donnees:data, maj:maj})});
+ if(!r.ok) throw new Error("écriture refusée ("+r.status+")");
+ derniereMaj = maj; lsSet("derniereMaj", maj);
+}
+
+function sauver(){
+ lsSet("stockFamille", JSON.stringify(data));
+ envoyer();
+}
+async function envoyer(){
+ if(envoiEnCours){ aEnvoyer = true; return; }
+ envoiEnCours = true; aEnvoyer = false; etat("Enregistrement...");
+ try{ await ecrireServeur(); etat("Synchronisé"); }
+ catch(e){ etat("Hors ligne : "+msg(e)); aEnvoyer = true; }
+ envoiEnCours = false;
+ if(aEnvoyer){ setTimeout(()=>{ if(aEnvoyer) envoyer(); }, 4000); }
+}
+async function synchroniser(){
+ if(!code || envoiEnCours || aEnvoyer) return;
+ if(document.getElementById("fond").classList.contains("ouvert")) return;
+ try{
+  const s = await lireServeur();
+  if(!s){ await ecrireServeur(); etat("Synchronisé"); return; }
+  if(s.maj !== derniereMaj){
+   data = {univers:s.donnees.univers||{}, courses:s.donnees.courses||{}};
+   derniereMaj = s.maj; lsSet("derniereMaj", s.maj);
+   lsSet("stockFamille", JSON.stringify(data));
+   dessiner();
+  }
+  etat("Synchronisé");
+ }catch(e){ etat("Hors ligne : "+msg(e)); }
+}
+
+function joursRestants(d){ if(!d) return null; return Math.ceil((new Date(d)-new Date(new Date().toDateString()))/86400000); }
+function lots(u){ return (u.lots||[]).slice().sort((a,b)=>a.date.localeCompare(b.date)); }
+function total(u){ return u.frais ? (u.lots||[]).reduce((s,l)=>s+l.n,0) : (u.qte||0); }
+function echap(t){ return String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function changer(id,delta){
+ const u = data.univers[id];
+ if(u.frais){
+  if(delta<0){ const l = lots(u); if(!l.length) return; const premier = u.lots.find(x=>x.date===l[0].date); premier.n--; u.lots = u.lots.filter(x=>x.n>0); }
+  else { demanderDate(id); return; }
+ } else { u.qte = Math.max(0,(u.qte||0)+delta); }
+ sauver(); dessiner();
+}
+function demanderDate(id){
+ const u = data.univers[id];
+ ouvrir(`<h2>Ajouter : ${echap(u.nom)}</h2>
+ <label>Date de péremption</label><input type="date" id="fDate">
+ <label>Nombre de ${echap(u.unite)}(s)</label><input type="number" id="fNb" value="1" min="1">
+ <button class="gros" onclick="ajouterLot('${id}')">Ajouter</button>
+ <button class="gros gris" onclick="fermer()">Annuler</button>`);
+}
+function ajouterLot(id){
+ const d = document.getElementById("fDate").value; const n = parseInt(document.getElementById("fNb").value)||1;
+ if(!d){ alert("Indiquez une date de péremption."); return; }
+ const u = data.univers[id]; u.lots = u.lots||[];
+ const ex = u.lots.find(x=>x.date===d); if(ex) ex.n+=n; else u.lots.push({date:d,n:n});
+ sauver(); fermer(); dessiner();
+}
+
+function ligne(id,u){
+ const t = total(u); const l = lots(u)[0]; let cls="", info="";
+ if(t<=0) cls="vide"; else if(t<=u.seuil) cls="bas";
+ if(u.frais && l){ const j = joursRestants(l.date); info = j<0?"Périmé depuis "+(-j)+" j": j===0?"Périme aujourd'hui":"À consommer avant "+l.date.split("-").reverse().join("/")+" ("+j+" j)"; if(j<0) cls="perime"; else if(j<=3) cls="bientot"; }
+ return `<div class="carte ${cls}"><div class="nom">${echap(u.nom)}<span class="info">${info||echap(u.unite)+" · seuil "+u.seuil}</span></div>
+ <button class="btn moins" onclick="changer('${id}',-1)">−</button><div class="qte">${t}</div><button class="btn plus" onclick="changer('${id}',1)">+</button></div>`;
+}
+function filtre(){ return document.getElementById("recherche").value.toLowerCase(); }
+function dessinerStock(){
+ const f = filtre(); let h="";
+ const urgents = Object.entries(data.univers).filter(([i,u])=>u.frais && lots(u).length && joursRestants(lots(u)[0].date)<=3 && u.nom.toLowerCase().includes(f));
+ if(urgents.length){ h+="<h2>À consommer en priorité</h2>"+urgents.map(([i,u])=>ligne(i,u)).join(""); }
+ CATEGORIES.forEach(c=>{
+  const items = Object.entries(data.univers).filter(([i,u])=>u.cat===c && u.nom.toLowerCase().includes(f)).sort((a,b)=>a[1].nom.localeCompare(b[1].nom));
+  if(items.length) h+="<h2>"+echap(c)+"</h2>"+items.map(([i,u])=>ligne(i,u)).join("");
+ });
+ document.getElementById("p-stock").innerHTML = h || '<div class="vide-msg">Aucun produit</div>';
+}
+function dessinerAvant(){
+ const f = filtre();
+ const items = Object.entries(data.univers).filter(([i,u])=>total(u)>0 && u.nom.toLowerCase().includes(f)).sort((a,b)=>a[1].nom.localeCompare(b[1].nom));
+ document.getElementById("p-avant").innerHTML = "<h2>Ce que nous avons déjà</h2>" + (items.map(([i,u])=>`<div class="carte"><div class="nom">${echap(u.nom)}</div><div class="qte">${total(u)}</div></div>`).join("") || '<div class="vide-msg">Le stock est vide</div>');
+}
+
+function dessinerCourses(){
+ const auto = Object.entries(data.univers).filter(([i,u])=>total(u)<=u.seuil).map(([i,u])=>({id:"auto_"+i,nom:u.nom,manque:Math.max(1,u.seuil+1-total(u))}));
+ const manuel = Object.entries(data.courses).filter(([i,c])=>!i.startsWith("auto_")).map(([i,c])=>({id:i,nom:c.nom,fait:c.fait}));
+ let h = `<label>Ajouter à la main</label><input id="cNom" placeholder="Ex : papier toilette"><button class="gros" onclick="ajouterCourse()">Ajouter à la liste</button>`;
+ h+="<h2>À acheter (stock bas)</h2>";
+ h+= auto.map(a=>{ const fait = (data.courses[a.id]||{}).fait; return `<div class="carte ${fait?'fait':''}"><div class="coche"><input type="checkbox" ${fait?'checked':''} onchange="cocher('${a.id}',this.checked)"></div><div class="nom">${echap(a.nom)}<span class="info">il en faut environ ${a.manque}</span></div></div>`; }).join("") || '<div class="vide-msg">Rien à racheter</div>';
+ if(manuel.length){ h+="<h2>Ajouts manuels</h2>"+manuel.map(c=>`<div class="carte ${c.fait?'fait':''}"><div class="coche"><input type="checkbox" ${c.fait?'checked':''} onchange="cocher('${c.id}',this.checked)"></div><div class="nom">${echap(c.nom)}</div><button class="btn moins" onclick="supprCourse('${c.id}')">×</button></div>`).join(""); }
+ h+= `<button class="gros" onclick="rentrer()">Rentrer les courses cochées au stock</button>`;
+ document.getElementById("p-courses").innerHTML = h;
+}
+function ajouterCourse(){ const n=document.getElementById("cNom").value.trim(); if(!n) return; data.courses["m"+Date.now()]={nom:n,fait:false}; sauver(); dessiner(); }
+function cocher(id,etatCase){ const c = data.courses[id]||{}; c.fait=etatCase; data.courses[id]=c; sauver(); dessiner(); }
+function supprCourse(id){ delete data.courses[id]; sauver(); dessiner(); }
+function rentrer(){
+ let frais = [];
+ Object.entries(data.courses).forEach(([id,c])=>{
+  if(!c.fait) return;
+  if(id.startsWith("auto_")){
+   const u = data.univers[id.slice(5)];
+   if(u && !u.frais){ u.qte=(u.qte||0)+Math.max(1,u.seuil+1-total(u)); }
+   else if(u && u.frais){ frais.push(u.nom); }
+  }
+  delete data.courses[id];
+ });
+ sauver(); dessiner();
+ if(frais.length) alert("Produits frais à ajouter depuis l'écran Stock, avec leur date de péremption : "+frais.join(", "));
+}
+
+function dessinerUnivers(){
+ let h = '<button class="gros" onclick="formUnivers()">+ Nouvel univers</button>';
+ CATEGORIES.forEach(c=>{
+  const items = Object.entries(data.univers).filter(([i,u])=>u.cat===c).sort((a,b)=>a[1].nom.localeCompare(b[1].nom));
+  if(items.length) h+="<h2>"+echap(c)+"</h2>"+items.map(([i,u])=>`<div class="carte"><div class="nom">${echap(u.nom)}<span class="info">${echap(u.unite)} · seuil ${u.seuil}${u.frais?' · avec péremption':''}</span></div><button class="gros gris petit" onclick="formUnivers('${i}')">Modifier</button></div>`).join("");
+ });
+ document.getElementById("p-univers").innerHTML = h;
+}
+function formUnivers(id){
+ const u = id ? data.univers[id] : {nom:"",cat:CATEGORIES[0],unite:"unité",seuil:1,frais:false};
+ ouvrir(`<h2>${id?'Modifier':'Nouvel'} univers</h2>
+ <label>Nom</label><input id="uNom" value="${echap(u.nom)}">
+ <label>Catégorie</label><select id="uCat">${CATEGORIES.map(c=>`<option ${c===u.cat?'selected':''}>${c}</option>`).join("")}</select>
+ <label>Unité (boîte, paquet, pot...)</label><input id="uUnite" value="${echap(u.unite)}">
+ <label>Seuil minimal avant de racheter</label><input id="uSeuil" type="number" min="0" value="${u.seuil}">
+ <label class="coche"><input type="checkbox" id="uFrais" ${u.frais?'checked':''}> Produit frais avec date de péremption</label>
+ <button class="gros" onclick="enregistrerUnivers('${id||''}')">Enregistrer</button>
+ ${id?`<button class="gros rouge" onclick="supprUnivers('${id}')">Supprimer cet univers</button>`:''}
+ <button class="gros gris" onclick="fermer()">Annuler</button>`);
+}
+function enregistrerUnivers(id){
+ const nom = document.getElementById("uNom").value.trim(); if(!nom){ alert("Donnez un nom."); return; }
+ const ancien = id ? data.univers[id] : {qte:0,lots:[]};
+ const u = {nom:nom,cat:document.getElementById("uCat").value,unite:document.getElementById("uUnite").value.trim()||"unité",seuil:parseInt(document.getElementById("uSeuil").value)||0,frais:document.getElementById("uFrais").checked,qte:ancien.qte||0,lots:ancien.lots||[]};
+ data.univers[id || "u"+Date.now()] = u; sauver(); fermer(); dessiner();
+}
+function supprUnivers(id){ if(!confirm("Supprimer cet univers ?")) return; delete data.univers[id]; sauver(); fermer(); dessiner(); }
+
+function dessinerReglages(){
+ document.getElementById("p-reglages").innerHTML = `<h2>Partage</h2>
+ <p class="note">Code famille de ce téléphone : <b>${echap(code||"aucun")}</b>. Il doit être identique sur les deux téléphones.</p>
+ <button class="gros" onclick="synchroniser()">Actualiser maintenant</button>
+ <button class="gros gris" onclick="changerCode()">Changer le code famille</button>
+ <h2>Remise à zéro</h2>
+ <button class="gros rouge" onclick="toutRemettre()">Remettre tous les stocks à zéro</button>
+ <p class="note">Les univers sont conservés, seules les quantités et les dates sont effacées, sur les deux téléphones.</p>`;
+}
+function changerCode(){
+ if(!confirm("Changer le code famille de ce téléphone ?")) return;
+ lsDel("codeFamille"); lsDel("derniereMaj"); location.reload();
+}
+function toutRemettre(){
+ if(!confirm("Remettre tous les stocks à zéro ?")) return;
+ Object.values(data.univers).forEach(u=>{ u.qte=0; u.lots=[]; });
+ sauver(); dessiner();
+}
+
+function ouvrir(h){ document.getElementById("fenetre").innerHTML=h; document.getElementById("fond").classList.add("ouvert"); }
+function fermer(){ document.getElementById("fond").classList.remove("ouvert"); }
+function dessiner(){ dessinerStock(); dessinerAvant(); dessinerCourses(); dessinerUnivers(); dessinerReglages(); }
+
+function demanderCode(){
+ etat("Code famille à saisir");
+ ouvrir(`<h2>Code famille</h2>
+ <p class="note">Saisissez le même code sur les deux téléphones : lettres et chiffres, au moins 6 caractères, long et secret.</p>
+ <input id="fCode" autocapitalize="off" autocomplete="off" placeholder="Ex : dupont482913">
+ <button class="gros" onclick="validerCode()">Valider</button>`);
+}
+function validerCode(){
+ const c = document.getElementById("fCode").value.trim().toLowerCase().replace(/[^a-z0-9]/g,"");
+ if(c.length<6){ alert("Choisissez un code d'au moins 6 caractères, lettres et chiffres."); return; }
+ code = c; lsSet("codeFamille", c); fermer(); dessiner(); demarrer();
+}
+let demarre = false;
+function demarrer(){
+ if(demarre) return; demarre = true;
+ if(SUPABASE_URL.indexOf("COLLEZ_ICI")>-1 || SUPABASE_CLE.indexOf("COLLEZ_ICI")>-1){ etat("Adresse ou clé Supabase non renseignée dans le fichier"); return; }
+ etat("Connexion...");
+ synchroniser();
+ setInterval(synchroniser, 5000);
+}
+
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+ document.querySelectorAll("nav button").forEach(x=>x.classList.remove("actif")); b.classList.add("actif");
+ document.querySelectorAll("section.page").forEach(s=>s.classList.remove("actif"));
+ document.getElementById("p-"+b.dataset.p).classList.add("actif");
+});
+document.getElementById("recherche").oninput = ()=>{ dessinerStock(); dessinerAvant(); };
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) synchroniser(); });
+window.addEventListener("online", ()=>{ if(aEnvoyer) envoyer(); else synchroniser(); });
+
+dessiner();
+if(!code) demanderCode(); else demarrer();
+</script>
+</body>
+</html>
