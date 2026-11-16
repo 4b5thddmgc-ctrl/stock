@@ -36,6 +36,8 @@ h2{font-size:15px;color:#2f6f5e;text-transform:uppercase;margin:18px 4px 6px}
 .gros{width:100%;padding:14px;border:0;border-radius:12px;background:#2f6f5e;color:#fff;font-size:17px;margin:8px 0}
 .gris{background:#888}
 .rouge{background:#c0392b}
+.contour{background:#fff;color:#2f6f5e;border:2px solid #2f6f5e}
+.choix{text-align:left;margin:4px 0;padding:12px}
 label{display:block;margin:10px 0 4px;font-size:14px;color:#555}
 input,select,textarea{width:100%;padding:12px;border:1px solid #ccc;border-radius:10px;font-size:16px;background:#fff;font-family:inherit}
 .coche{display:flex;align-items:center;gap:10px}
@@ -69,7 +71,7 @@ input,select,textarea{width:100%;padding:12px;border:1px solid #ccc;border-radiu
 <button data-p="avant">Inventaire</button>
 <button data-p="courses">Courses</button>
 <button data-p="peremption">Péremption<span class="badge" id="badge"></span></button>
-<button data-p="univers">Univers</button>
+<button data-p="univers">Produits</button>
 <button data-p="reglages">Réglages</button>
 </nav>
 
@@ -109,6 +111,7 @@ let data = lireLocal();
 let derniereMaj = lsGet("derniereMaj") || "";
 let envoiEnCours = false, aEnvoyer = false;
 let fraisEnCours = [];
+let aSel = null, aCreer = false;
 
 function donneesDepart(){
  const d = {univers:{}, courses:{}};
@@ -179,6 +182,7 @@ function fr(d){ return d.split("-").reverse().join("/"); }
 function lots(u){ return (u.lots||[]).slice().sort((a,b)=>a.date.localeCompare(b.date)); }
 function total(u){ return u.frais ? (u.lots||[]).reduce((s,l)=>s+l.n,0) : (u.qte||0); }
 function echap(t){ return String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function norm(s){ return String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim(); }
 
 function changer(id,delta){
  const u = data.univers[id];
@@ -214,20 +218,20 @@ function ligne(id,u){
  return `<div class="carte ${cls}"><div class="nom">${echap(u.nom)}<span class="info">${info}</span></div>
  <button class="btn moins" onclick="changer('${id}',-1)">−</button><div class="qte">${t}</div><button class="btn plus" onclick="changer('${id}',1)">+</button></div>`;
 }
-function filtre(){ return document.getElementById("recherche").value.toLowerCase(); }
+function filtre(){ return norm(document.getElementById("recherche").value); }
 function dessinerStock(){
  const f = filtre(); let h="";
- const urgents = Object.entries(data.univers).filter(([i,u])=>u.frais && lots(u).length && joursRestants(lots(u)[0].date)<=JOURS_ALERTE && u.nom.toLowerCase().includes(f));
+ const urgents = Object.entries(data.univers).filter(([i,u])=>u.frais && lots(u).length && joursRestants(lots(u)[0].date)<=JOURS_ALERTE && norm(u.nom).includes(f));
  if(urgents.length){ h+="<h2>À consommer en priorité</h2>"+urgents.map(([i,u])=>ligne(i,u)).join(""); }
  CATEGORIES.forEach(c=>{
-  const items = Object.entries(data.univers).filter(([i,u])=>u.cat===c && u.nom.toLowerCase().includes(f)).sort((a,b)=>a[1].nom.localeCompare(b[1].nom));
+  const items = Object.entries(data.univers).filter(([i,u])=>u.cat===c && norm(u.nom).includes(f)).sort((a,b)=>a[1].nom.localeCompare(b[1].nom));
   if(items.length) h+="<h2>"+echap(c)+"</h2>"+items.map(([i,u])=>ligne(i,u)).join("");
  });
  document.getElementById("p-stock").innerHTML = h || '<div class="vide-msg">Aucun produit</div>';
 }
 function dessinerAvant(){
  const f = filtre();
- const items = Object.entries(data.univers).filter(([i,u])=>total(u)>0 && u.nom.toLowerCase().includes(f)).sort((a,b)=>a[1].nom.localeCompare(b[1].nom));
+ const items = Object.entries(data.univers).filter(([i,u])=>total(u)>0 && norm(u.nom).includes(f)).sort((a,b)=>a[1].nom.localeCompare(b[1].nom));
  document.getElementById("p-avant").innerHTML = "<h2>Ce que nous avons déjà</h2>" + (items.map(([i,u])=>`<div class="carte"><div class="nom">${echap(u.nom)}</div><div class="qte">${total(u)}</div></div>`).join("") || '<div class="vide-msg">Le stock est vide</div>');
 }
 
@@ -272,42 +276,67 @@ function dessinerCourses(){
  }).join("") || '<div class="vide-msg">Rien à racheter</div>';
  if(manuel.length){ h+="<h2>Ajouts ponctuels</h2>"+manuel.map(c=>`<div class="carte ${c.fait?'fait':''}"><div class="coche"><input type="checkbox" ${c.fait?'checked':''} onchange="cocher('${c.id}',this.checked)"></div><div class="nom">${echap(c.nom)}</div><button class="btn moins" onclick="supprCourse('${c.id}')">×</button></div>`).join(""); }
  h+= `<button class="gros" onclick="rentrer()">Rentrer les courses cochées au stock</button>
- <p class="note">Cochez ce que vous avez acheté et vérifiez la quantité. Les ajouts ponctuels, sans univers, ne passent pas dans le stock.</p>`;
+ <p class="note">Cochez ce que vous avez acheté et vérifiez la quantité. Les ajouts ponctuels, sans produit enregistré, ne passent pas dans le stock.</p>`;
  document.getElementById("p-courses").innerHTML = h;
 }
-function trouverUnivers(nom){ const n = nom.trim().toLowerCase(); return Object.entries(data.univers).find(([i,u])=>u.nom.toLowerCase()===n); }
+function trouverUnivers(nom){ const n = norm(nom); return Object.entries(data.univers).find(([i,u])=>norm(u.nom)===n); }
 function formAjoutCourse(){
+ aSel = null; aCreer = false;
  ouvrir(`<h2>Ajouter à la liste</h2>
- <label>Produit</label><input id="aNom" list="listeUnivers" autocomplete="off" oninput="majFormCourse()" placeholder="Ex : papier toilette">
- <datalist id="listeUnivers">${Object.values(data.univers).map(u=>`<option value="${echap(u.nom)}">`).join("")}</datalist>
- <label>Quantité à acheter</label><input id="aQte" type="number" inputmode="numeric" min="1" value="1">
+ <label>Produit</label><input id="aNom" autocomplete="off" oninput="majRecherche()" placeholder="Ex : lait">
+ <div id="aSug"></div>
  <div id="aInfo" class="note"></div>
+ <label>Quantité à acheter</label><input id="aQte" type="number" inputmode="numeric" min="1" value="1">
  <div id="aNouv" style="display:none">
   <label>Catégorie</label><select id="aCat">${CATEGORIES.map(c=>`<option>${c}</option>`).join("")}</select>
   <label>Unité (boîte, paquet, rouleau...)</label><input id="aUnite" value="unité">
   <label>Seuil minimal avant de racheter</label><input id="aSeuil" type="number" inputmode="numeric" min="0" value="1">
   <label class="coche"><input type="checkbox" id="aFrais"> Produit frais avec date de péremption</label>
-  <label class="coche"><input type="checkbox" id="aUnique"> Juste pour cette fois, sans créer d'univers</label>
+  <label class="coche"><input type="checkbox" id="aUnique"> Juste pour cette fois, sans créer de produit</label>
  </div>
  <button class="gros" onclick="validerAjoutCourse()">Ajouter à la liste</button>
  <button class="gros gris" onclick="fermer()">Annuler</button>`);
 }
-function majFormCourse(){
- const nom = document.getElementById("aNom").value; const ex = nom.trim() ? trouverUnivers(nom) : null;
- document.getElementById("aNouv").style.display = (ex || !nom.trim()) ? "none" : "block";
- document.getElementById("aInfo").textContent = ex ? "Univers existant : "+ex[1].nom+" (stock actuel : "+total(ex[1])+")" : (nom.trim() ? "Nouveau produit : un univers va être créé." : "");
+function majRecherche(){
+ aSel = null; aCreer = false;
+ const q = document.getElementById("aNom").value; const nq = norm(q);
+ const sug = document.getElementById("aSug"), info = document.getElementById("aInfo"), nouv = document.getElementById("aNouv");
+ nouv.style.display = "none"; sug.innerHTML = ""; info.textContent = "";
+ if(!nq) return;
+ const exact = trouverUnivers(q);
+ if(exact){ aSel = exact[0]; info.textContent = "Produit existant : "+exact[1].nom+" (stock actuel : "+total(exact[1])+")"; return; }
+ const liste = Object.entries(data.univers).filter(([i,u])=>norm(u.nom).includes(nq)).sort((a,b)=>a[1].nom.localeCompare(b[1].nom)).slice(0,6);
+ let h = liste.map(([i,u])=>`<button class="gros gris choix" onclick="choisirProduit('${i}')">${echap(u.nom)} <span style="opacity:.85;font-size:13px">· stock ${total(u)}</span></button>`).join("");
+ h += `<button class="gros contour" onclick="creerNouveau()">${liste.length?"Aucun de ceux-ci : ":""}créer « ${echap(q.trim())} » comme nouveau produit</button>`;
+ sug.innerHTML = h;
+}
+function choisirProduit(id){
+ aSel = id; aCreer = false; const u = data.univers[id];
+ document.getElementById("aNom").value = u.nom;
+ document.getElementById("aSug").innerHTML = "";
+ document.getElementById("aNouv").style.display = "none";
+ document.getElementById("aInfo").textContent = "Produit sélectionné : "+u.nom+" (stock actuel : "+total(u)+")";
+}
+function creerNouveau(){
+ aCreer = true;
+ document.getElementById("aSug").innerHTML = "";
+ document.getElementById("aNouv").style.display = "block";
+ document.getElementById("aInfo").textContent = "Nouveau produit : choisissez ses réglages ci-dessous.";
 }
 function validerAjoutCourse(){
  const nom = document.getElementById("aNom").value.trim(); if(!nom){ alert("Indiquez le produit."); return; }
  const n = Math.max(1, parseInt(document.getElementById("aQte").value)||1);
- const ex = trouverUnivers(nom);
- if(ex){ data.courses["auto_"+ex[0]] = {qte:n, voulu:true, fait:false}; }
- else if(document.getElementById("aUnique").checked){ data.courses["m"+Date.now()] = {nom:nom+(n>1?" x"+n:""), fait:false}; }
- else {
-  const id = "u"+Date.now();
-  data.univers[id] = {nom:nom, cat:document.getElementById("aCat").value, unite:document.getElementById("aUnite").value.trim()||"unité", seuil:parseInt(document.getElementById("aSeuil").value)||0, frais:document.getElementById("aFrais").checked, qte:0, lots:[]};
-  data.courses["auto_"+id] = {qte:n, voulu:true, fait:false};
+ if(aSel && data.univers[aSel]){ data.courses["auto_"+aSel] = {qte:n, voulu:true, fait:false}; }
+ else if(aCreer){
+  if(trouverUnivers(nom)){ alert("Ce produit existe déjà. Choisissez-le dans la liste ou changez l'intitulé."); return; }
+  if(document.getElementById("aUnique").checked){ data.courses["m"+Date.now()] = {nom:nom+(n>1?" x"+n:""), fait:false}; }
+  else {
+   const id = "u"+Date.now();
+   data.univers[id] = {nom:nom, cat:document.getElementById("aCat").value, unite:document.getElementById("aUnite").value.trim()||"unité", seuil:parseInt(document.getElementById("aSeuil").value)||0, frais:document.getElementById("aFrais").checked, qte:0, lots:[]};
+   data.courses["auto_"+id] = {qte:n, voulu:true, fait:false};
+  }
  }
+ else { alert("Choisissez un produit dans la liste, ou touchez « créer ... comme nouveau produit »."); return; }
  sauver(); fermer(); dessiner();
 }
 function changerQte(id,v){ const n = Math.max(1, parseInt(v)||1); const c = data.courses[id]||{}; c.qte = n; data.courses[id] = c; sauver(); }
@@ -345,7 +374,7 @@ function validerFrais(){
 }
 
 function dessinerUnivers(){
- let h = '<button class="gros" onclick="formUnivers()">+ Nouvel univers</button>';
+ let h = '<button class="gros" onclick="formUnivers()">+ Nouveau produit</button>';
  CATEGORIES.forEach(c=>{
   const items = Object.entries(data.univers).filter(([i,u])=>u.cat===c).sort((a,b)=>a[1].nom.localeCompare(b[1].nom));
   if(items.length) h+="<h2>"+echap(c)+"</h2>"+items.map(([i,u])=>`<div class="carte"><div class="nom">${echap(u.nom)}<span class="info">${echap(u.unite)} · seuil ${u.seuil}${u.frais?' · avec péremption':''}</span></div><button class="gros gris petit" onclick="formUnivers('${i}')">Modifier</button></div>`).join("");
@@ -354,23 +383,25 @@ function dessinerUnivers(){
 }
 function formUnivers(id){
  const u = id ? data.univers[id] : {nom:"",cat:CATEGORIES[0],unite:"unité",seuil:1,frais:false};
- ouvrir(`<h2>${id?'Modifier':'Nouvel'} univers</h2>
+ ouvrir(`<h2>${id?'Modifier le produit':'Nouveau produit'}</h2>
  <label>Nom</label><input id="uNom" value="${echap(u.nom)}">
  <label>Catégorie</label><select id="uCat">${CATEGORIES.map(c=>`<option ${c===u.cat?'selected':''}>${c}</option>`).join("")}</select>
  <label>Unité (boîte, paquet, pot...)</label><input id="uUnite" value="${echap(u.unite)}">
  <label>Seuil minimal avant de racheter</label><input id="uSeuil" type="number" min="0" value="${u.seuil}">
  <label class="coche"><input type="checkbox" id="uFrais" ${u.frais?'checked':''}> Produit frais avec date de péremption</label>
  <button class="gros" onclick="enregistrerUnivers('${id||''}')">Enregistrer</button>
- ${id?`<button class="gros rouge" onclick="supprUnivers('${id}')">Supprimer cet univers</button>`:''}
+ ${id?`<button class="gros rouge" onclick="supprUnivers('${id}')">Supprimer ce produit</button>`:''}
  <button class="gros gris" onclick="fermer()">Annuler</button>`);
 }
 function enregistrerUnivers(id){
  const nom = document.getElementById("uNom").value.trim(); if(!nom){ alert("Donnez un nom."); return; }
+ const doublon = Object.entries(data.univers).find(([i,x])=>norm(x.nom)===norm(nom) && i!==id);
+ if(doublon){ alert("Un produit porte déjà ce nom. Choisissez un intitulé différent."); return; }
  const ancien = id ? data.univers[id] : {qte:0,lots:[]};
  const u = {nom:nom,cat:document.getElementById("uCat").value,unite:document.getElementById("uUnite").value.trim()||"unité",seuil:parseInt(document.getElementById("uSeuil").value)||0,frais:document.getElementById("uFrais").checked,qte:ancien.qte||0,lots:ancien.lots||[]};
  data.univers[id || "u"+Date.now()] = u; sauver(); fermer(); dessiner();
 }
-function supprUnivers(id){ if(!confirm("Supprimer cet univers ?")) return; delete data.univers[id]; delete data.courses["auto_"+id]; sauver(); fermer(); dessiner(); }
+function supprUnivers(id){ if(!confirm("Supprimer ce produit ?")) return; delete data.univers[id]; delete data.courses["auto_"+id]; sauver(); fermer(); dessiner(); }
 
 function dessinerReglages(){
  document.getElementById("p-reglages").innerHTML = `<h2>Partage</h2>
@@ -379,7 +410,7 @@ function dessinerReglages(){
  <button class="gros gris" onclick="changerCode()">Changer le code famille</button>
  <h2>Remise à zéro</h2>
  <button class="gros rouge" onclick="toutRemettre()">Remettre tous les stocks à zéro</button>
- <p class="note">Les univers sont conservés, seules les quantités et les dates sont effacées, sur les deux téléphones.</p>`;
+ <p class="note">Les produits sont conservés, seules les quantités et les dates sont effacées, sur les deux téléphones.</p>`;
 }
 function changerCode(){
  if(!confirm("Changer le code famille de ce téléphone ?")) return;
