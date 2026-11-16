@@ -17,8 +17,10 @@ header h1{margin:0;font-size:20px}
 #sync{font-size:12px;opacity:.9}
 #recherche{width:100%;margin-top:10px;padding:12px;border:0;border-radius:10px;font-size:16px}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ddd;z-index:5}
-nav button{flex:1;padding:14px 2px;border:0;background:#fff;font-size:13px;color:#555}
+nav button{flex:1;min-width:0;position:relative;padding:14px 0;border:0;background:#fff;font-size:11px;color:#555;white-space:nowrap}
 nav button.actif{color:#2f6f5e;font-weight:700;border-top:3px solid #2f6f5e}
+.badge{position:absolute;top:2px;right:2px;background:#c0392b;color:#fff;border-radius:9px;font-size:10px;line-height:1;padding:2px 5px}
+.badge:empty{display:none}
 section.page{display:none;padding:12px}
 section.page.actif{display:block}
 h2{font-size:15px;color:#2f6f5e;text-transform:uppercase;margin:18px 4px 6px}
@@ -39,11 +41,12 @@ input,select,textarea{width:100%;padding:12px;border:1px solid #ccc;border-radiu
 .coche{display:flex;align-items:center;gap:10px}
 .coche input{width:26px;height:26px;flex-shrink:0}
 .fait .nom{text-decoration:line-through;color:#999}
+.saisie-qte{width:72px;text-align:center;flex-shrink:0;padding:10px 4px}
 #fond{position:fixed;inset:0;background:#0007;display:none;z-index:10;align-items:flex-end}
 #fond.ouvert{display:flex}
 #fenetre{background:#f4f1ea;width:100%;max-height:90vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px}
 .vide-msg{text-align:center;color:#888;padding:30px}
-.petit{width:auto;margin:0;padding:10px 14px;font-size:15px}
+.petit{width:auto;margin:0;padding:10px 12px;font-size:14px;flex-shrink:0}
 .note{font-size:13px;color:#666;margin:6px 4px}
 </style>
 </head>
@@ -57,13 +60,15 @@ input,select,textarea{width:100%;padding:12px;border:1px solid #ccc;border-radiu
 <section class="page actif" id="p-stock"></section>
 <section class="page" id="p-avant"></section>
 <section class="page" id="p-courses"></section>
+<section class="page" id="p-peremption"></section>
 <section class="page" id="p-univers"></section>
 <section class="page" id="p-reglages"></section>
 
 <nav>
 <button data-p="stock" class="actif">Stock</button>
-<button data-p="avant">Avant courses</button>
+<button data-p="avant">Inventaire</button>
 <button data-p="courses">Courses</button>
+<button data-p="peremption">Péremption<span class="badge" id="badge"></span></button>
 <button data-p="univers">Univers</button>
 <button data-p="reglages">Réglages</button>
 </nav>
@@ -71,8 +76,9 @@ input,select,textarea{width:100%;padding:12px;border:1px solid #ccc;border-radiu
 <div id="fond"><div id="fenetre"></div></div>
 
 <script>
-const SUPABASE_URL = "https://rppefxifbccubddmfsql.supabase.co";
+const SUPABASE_URL = "https://rppefxifbccubddmfsql.supabase.co/rest/v1/";
 const SUPABASE_CLE = "sb_publishable_1pFptrM4Vn1JpTbUtsAD_A_sAd7IGfV";
+const JOURS_ALERTE = 5;
 
 const CATEGORIES = ["Conserves","Gâteaux et biscuits","Produits frais","Surgelés","Boissons","Hygiène","Autres"];
 const DEPART = [
@@ -102,6 +108,7 @@ let code = lsGet("codeFamille");
 let data = lireLocal();
 let derniereMaj = lsGet("derniereMaj") || "";
 let envoiEnCours = false, aEnvoyer = false;
+let fraisEnCours = [];
 
 function donneesDepart(){
  const d = {univers:{}, courses:{}};
@@ -168,6 +175,7 @@ async function synchroniser(){
 }
 
 function joursRestants(d){ if(!d) return null; return Math.ceil((new Date(d)-new Date(new Date().toDateString()))/86400000); }
+function fr(d){ return d.split("-").reverse().join("/"); }
 function lots(u){ return (u.lots||[]).slice().sort((a,b)=>a.date.localeCompare(b.date)); }
 function total(u){ return u.frais ? (u.lots||[]).reduce((s,l)=>s+l.n,0) : (u.qte||0); }
 function echap(t){ return String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
@@ -199,14 +207,17 @@ function ajouterLot(id){
 function ligne(id,u){
  const t = total(u); const l = lots(u)[0]; let cls="", info="";
  if(t<=0) cls="vide"; else if(t<=u.seuil) cls="bas";
- if(u.frais && l){ const j = joursRestants(l.date); info = j<0?"Périmé depuis "+(-j)+" j": j===0?"Périme aujourd'hui":"À consommer avant "+l.date.split("-").reverse().join("/")+" ("+j+" j)"; if(j<0) cls="perime"; else if(j<=3) cls="bientot"; }
- return `<div class="carte ${cls}"><div class="nom">${echap(u.nom)}<span class="info">${info||echap(u.unite)+" · seuil "+u.seuil}</span></div>
+ if(u.frais && l){
+  info = lots(u).map(x=>{ const j = joursRestants(x.date); const c = j<0?"#c0392b":(j<=JOURS_ALERTE?"#e08a1e":"#777"); return `<span style="display:block;color:${c}">${x.n} ${echap(u.unite)}(s) avant le ${fr(x.date)}${j<0?" (périmé)":""}</span>`; }).join("");
+  const j = joursRestants(l.date); if(j<0) cls="perime"; else if(j<=JOURS_ALERTE) cls="bientot";
+ } else { info = echap(u.unite)+" · seuil "+u.seuil; }
+ return `<div class="carte ${cls}"><div class="nom">${echap(u.nom)}<span class="info">${info}</span></div>
  <button class="btn moins" onclick="changer('${id}',-1)">−</button><div class="qte">${t}</div><button class="btn plus" onclick="changer('${id}',1)">+</button></div>`;
 }
 function filtre(){ return document.getElementById("recherche").value.toLowerCase(); }
 function dessinerStock(){
  const f = filtre(); let h="";
- const urgents = Object.entries(data.univers).filter(([i,u])=>u.frais && lots(u).length && joursRestants(lots(u)[0].date)<=3 && u.nom.toLowerCase().includes(f));
+ const urgents = Object.entries(data.univers).filter(([i,u])=>u.frais && lots(u).length && joursRestants(lots(u)[0].date)<=JOURS_ALERTE && u.nom.toLowerCase().includes(f));
  if(urgents.length){ h+="<h2>À consommer en priorité</h2>"+urgents.map(([i,u])=>ligne(i,u)).join(""); }
  CATEGORIES.forEach(c=>{
   const items = Object.entries(data.univers).filter(([i,u])=>u.cat===c && u.nom.toLowerCase().includes(f)).sort((a,b)=>a[1].nom.localeCompare(b[1].nom));
@@ -220,17 +231,86 @@ function dessinerAvant(){
  document.getElementById("p-avant").innerHTML = "<h2>Ce que nous avons déjà</h2>" + (items.map(([i,u])=>`<div class="carte"><div class="nom">${echap(u.nom)}</div><div class="qte">${total(u)}</div></div>`).join("") || '<div class="vide-msg">Le stock est vide</div>');
 }
 
+function listePeremption(){
+ const liste = [];
+ Object.entries(data.univers).forEach(([id,u])=>{
+  if(!u.frais) return;
+  (u.lots||[]).forEach(l=>{ const j = joursRestants(l.date); if(j<=JOURS_ALERTE) liste.push({id:id,u:u,l:l,j:j}); });
+ });
+ liste.sort((a,b)=>a.l.date.localeCompare(b.l.date));
+ return liste;
+}
+function ligneLot(x){
+ const txt = x.j<0 ? "Périmé depuis "+(-x.j)+" j ("+fr(x.l.date)+")" : x.j===0 ? "Périme aujourd'hui" : "Dans "+x.j+" j ("+fr(x.l.date)+")";
+ return `<div class="carte ${x.j<0?'perime':'bientot'}"><div class="nom">${echap(x.u.nom)}<span class="info">${txt}</span></div><div class="qte">${x.l.n}</div><button class="btn moins" onclick="retirerLot('${x.id}','${x.l.date}',1)">−</button><button class="gros gris petit" onclick="retirerLot('${x.id}','${x.l.date}',0)">Jeter</button></div>`;
+}
+function dessinerPeremption(){
+ const liste = listePeremption();
+ const perimes = liste.filter(x=>x.j<0), proches = liste.filter(x=>x.j>=0);
+ let h = `<p class="note">Produits frais périmés ou qui périment dans les ${JOURS_ALERTE} prochains jours. Le bouton moins retire une unité, « Jeter » retire tout le lot.</p>`;
+ if(perimes.length) h += "<h2>Périmés</h2>" + perimes.map(ligneLot).join("");
+ if(proches.length) h += "<h2>À consommer vite</h2>" + proches.map(ligneLot).join("");
+ if(!liste.length) h += `<div class="vide-msg">Rien ne périme dans les ${JOURS_ALERTE} prochains jours.</div>`;
+ document.getElementById("p-peremption").innerHTML = h;
+ document.getElementById("badge").textContent = liste.length ? liste.length : "";
+}
+function retirerLot(id,date,un){
+ const u = data.univers[id]; const l = (u.lots||[]).find(x=>x.date===date); if(!l) return;
+ if(un===1){ l.n--; } else { if(!confirm("Jeter tout ce lot ?")) return; l.n = 0; }
+ u.lots = u.lots.filter(x=>x.n>0);
+ sauver(); dessiner();
+}
+
 function dessinerCourses(){
- const auto = Object.entries(data.univers).filter(([i,u])=>total(u)<=u.seuil).map(([i,u])=>({id:"auto_"+i,nom:u.nom,manque:Math.max(1,u.seuil+1-total(u))}));
+ const auto = Object.entries(data.univers).filter(([i,u])=>total(u)<=u.seuil || (data.courses["auto_"+i]||{}).voulu).map(([i,u])=>({id:"auto_"+i,nom:u.nom,unite:u.unite,manque:Math.max(1,u.seuil+1-total(u))}));
  const manuel = Object.entries(data.courses).filter(([i,c])=>!i.startsWith("auto_")).map(([i,c])=>({id:i,nom:c.nom,fait:c.fait}));
- let h = `<label>Ajouter à la main</label><input id="cNom" placeholder="Ex : papier toilette"><button class="gros" onclick="ajouterCourse()">Ajouter à la liste</button>`;
- h+="<h2>À acheter (stock bas)</h2>";
- h+= auto.map(a=>{ const fait = (data.courses[a.id]||{}).fait; return `<div class="carte ${fait?'fait':''}"><div class="coche"><input type="checkbox" ${fait?'checked':''} onchange="cocher('${a.id}',this.checked)"></div><div class="nom">${echap(a.nom)}<span class="info">il en faut environ ${a.manque}</span></div></div>`; }).join("") || '<div class="vide-msg">Rien à racheter</div>';
- if(manuel.length){ h+="<h2>Ajouts manuels</h2>"+manuel.map(c=>`<div class="carte ${c.fait?'fait':''}"><div class="coche"><input type="checkbox" ${c.fait?'checked':''} onchange="cocher('${c.id}',this.checked)"></div><div class="nom">${echap(c.nom)}</div><button class="btn moins" onclick="supprCourse('${c.id}')">×</button></div>`).join(""); }
- h+= `<button class="gros" onclick="rentrer()">Rentrer les courses cochées au stock</button>`;
+ let h = '<button class="gros" onclick="formAjoutCourse()">+ Ajouter un produit à la liste</button>';
+ h+="<h2>À acheter</h2>";
+ h+= auto.map(a=>{
+  const c = data.courses[a.id]||{}; const fait = c.fait; const q = c.qte!=null ? c.qte : a.manque;
+  return `<div class="carte ${fait?'fait':''}"><div class="coche"><input type="checkbox" ${fait?'checked':''} onchange="cocher('${a.id}',this.checked)"></div><div class="nom">${echap(a.nom)}<span class="info">conseillé : ${a.manque} · quantité achetée :</span></div><input type="number" inputmode="numeric" min="1" class="saisie-qte" value="${q}" onchange="changerQte('${a.id}',this.value)"></div>`;
+ }).join("") || '<div class="vide-msg">Rien à racheter</div>';
+ if(manuel.length){ h+="<h2>Ajouts ponctuels</h2>"+manuel.map(c=>`<div class="carte ${c.fait?'fait':''}"><div class="coche"><input type="checkbox" ${c.fait?'checked':''} onchange="cocher('${c.id}',this.checked)"></div><div class="nom">${echap(c.nom)}</div><button class="btn moins" onclick="supprCourse('${c.id}')">×</button></div>`).join(""); }
+ h+= `<button class="gros" onclick="rentrer()">Rentrer les courses cochées au stock</button>
+ <p class="note">Cochez ce que vous avez acheté et vérifiez la quantité. Les ajouts ponctuels, sans univers, ne passent pas dans le stock.</p>`;
  document.getElementById("p-courses").innerHTML = h;
 }
-function ajouterCourse(){ const n=document.getElementById("cNom").value.trim(); if(!n) return; data.courses["m"+Date.now()]={nom:n,fait:false}; sauver(); dessiner(); }
+function trouverUnivers(nom){ const n = nom.trim().toLowerCase(); return Object.entries(data.univers).find(([i,u])=>u.nom.toLowerCase()===n); }
+function formAjoutCourse(){
+ ouvrir(`<h2>Ajouter à la liste</h2>
+ <label>Produit</label><input id="aNom" list="listeUnivers" autocomplete="off" oninput="majFormCourse()" placeholder="Ex : papier toilette">
+ <datalist id="listeUnivers">${Object.values(data.univers).map(u=>`<option value="${echap(u.nom)}">`).join("")}</datalist>
+ <label>Quantité à acheter</label><input id="aQte" type="number" inputmode="numeric" min="1" value="1">
+ <div id="aInfo" class="note"></div>
+ <div id="aNouv" style="display:none">
+  <label>Catégorie</label><select id="aCat">${CATEGORIES.map(c=>`<option>${c}</option>`).join("")}</select>
+  <label>Unité (boîte, paquet, rouleau...)</label><input id="aUnite" value="unité">
+  <label>Seuil minimal avant de racheter</label><input id="aSeuil" type="number" inputmode="numeric" min="0" value="1">
+  <label class="coche"><input type="checkbox" id="aFrais"> Produit frais avec date de péremption</label>
+  <label class="coche"><input type="checkbox" id="aUnique"> Juste pour cette fois, sans créer d'univers</label>
+ </div>
+ <button class="gros" onclick="validerAjoutCourse()">Ajouter à la liste</button>
+ <button class="gros gris" onclick="fermer()">Annuler</button>`);
+}
+function majFormCourse(){
+ const nom = document.getElementById("aNom").value; const ex = nom.trim() ? trouverUnivers(nom) : null;
+ document.getElementById("aNouv").style.display = (ex || !nom.trim()) ? "none" : "block";
+ document.getElementById("aInfo").textContent = ex ? "Univers existant : "+ex[1].nom+" (stock actuel : "+total(ex[1])+")" : (nom.trim() ? "Nouveau produit : un univers va être créé." : "");
+}
+function validerAjoutCourse(){
+ const nom = document.getElementById("aNom").value.trim(); if(!nom){ alert("Indiquez le produit."); return; }
+ const n = Math.max(1, parseInt(document.getElementById("aQte").value)||1);
+ const ex = trouverUnivers(nom);
+ if(ex){ data.courses["auto_"+ex[0]] = {qte:n, voulu:true, fait:false}; }
+ else if(document.getElementById("aUnique").checked){ data.courses["m"+Date.now()] = {nom:nom+(n>1?" x"+n:""), fait:false}; }
+ else {
+  const id = "u"+Date.now();
+  data.univers[id] = {nom:nom, cat:document.getElementById("aCat").value, unite:document.getElementById("aUnite").value.trim()||"unité", seuil:parseInt(document.getElementById("aSeuil").value)||0, frais:document.getElementById("aFrais").checked, qte:0, lots:[]};
+  data.courses["auto_"+id] = {qte:n, voulu:true, fait:false};
+ }
+ sauver(); fermer(); dessiner();
+}
+function changerQte(id,v){ const n = Math.max(1, parseInt(v)||1); const c = data.courses[id]||{}; c.qte = n; data.courses[id] = c; sauver(); }
 function cocher(id,etatCase){ const c = data.courses[id]||{}; c.fait=etatCase; data.courses[id]=c; sauver(); dessiner(); }
 function supprCourse(id){ delete data.courses[id]; sauver(); dessiner(); }
 function rentrer(){
@@ -238,14 +318,30 @@ function rentrer(){
  Object.entries(data.courses).forEach(([id,c])=>{
   if(!c.fait) return;
   if(id.startsWith("auto_")){
-   const u = data.univers[id.slice(5)];
-   if(u && !u.frais){ u.qte=(u.qte||0)+Math.max(1,u.seuil+1-total(u)); }
-   else if(u && u.frais){ frais.push(u.nom); }
+   const uid = id.slice(5); const u = data.univers[uid];
+   const n = c.qte!=null ? c.qte : (u ? Math.max(1,u.seuil+1-total(u)) : 1);
+   if(u && u.frais){ frais.push({id:uid,n:n}); return; }
+   if(u){ u.qte = (u.qte||0)+n; }
   }
   delete data.courses[id];
  });
  sauver(); dessiner();
- if(frais.length) alert("Produits frais à ajouter depuis l'écran Stock, avec leur date de péremption : "+frais.join(", "));
+ if(frais.length) demanderDatesFrais(frais);
+}
+function demanderDatesFrais(liste){
+ fraisEnCours = liste;
+ ouvrir(`<h2>Produits frais</h2><p class="note">Indiquez la date de péremption de chaque produit acheté.</p>` +
+  liste.map((f,i)=>{ const u = data.univers[f.id]; return `<label>${echap(u.nom)} (${f.n} ${echap(u.unite)}(s))</label><input type="date" id="ff${i}">`; }).join("") +
+  `<button class="gros" onclick="validerFrais()">Ajouter au stock</button><button class="gros gris" onclick="fermer()">Plus tard</button>`);
+}
+function validerFrais(){
+ for(let i=0;i<fraisEnCours.length;i++){ if(!document.getElementById("ff"+i).value){ alert("Indiquez toutes les dates."); return; } }
+ fraisEnCours.forEach((f,i)=>{
+  const d = document.getElementById("ff"+i).value; const u = data.univers[f.id];
+  u.lots = u.lots||[]; const ex = u.lots.find(x=>x.date===d); if(ex) ex.n+=f.n; else u.lots.push({date:d,n:f.n});
+  delete data.courses["auto_"+f.id];
+ });
+ fraisEnCours = []; sauver(); fermer(); dessiner();
 }
 
 function dessinerUnivers(){
@@ -274,7 +370,7 @@ function enregistrerUnivers(id){
  const u = {nom:nom,cat:document.getElementById("uCat").value,unite:document.getElementById("uUnite").value.trim()||"unité",seuil:parseInt(document.getElementById("uSeuil").value)||0,frais:document.getElementById("uFrais").checked,qte:ancien.qte||0,lots:ancien.lots||[]};
  data.univers[id || "u"+Date.now()] = u; sauver(); fermer(); dessiner();
 }
-function supprUnivers(id){ if(!confirm("Supprimer cet univers ?")) return; delete data.univers[id]; sauver(); fermer(); dessiner(); }
+function supprUnivers(id){ if(!confirm("Supprimer cet univers ?")) return; delete data.univers[id]; delete data.courses["auto_"+id]; sauver(); fermer(); dessiner(); }
 
 function dessinerReglages(){
  document.getElementById("p-reglages").innerHTML = `<h2>Partage</h2>
@@ -297,7 +393,7 @@ function toutRemettre(){
 
 function ouvrir(h){ document.getElementById("fenetre").innerHTML=h; document.getElementById("fond").classList.add("ouvert"); }
 function fermer(){ document.getElementById("fond").classList.remove("ouvert"); }
-function dessiner(){ dessinerStock(); dessinerAvant(); dessinerCourses(); dessinerUnivers(); dessinerReglages(); }
+function dessiner(){ dessinerStock(); dessinerAvant(); dessinerCourses(); dessinerPeremption(); dessinerUnivers(); dessinerReglages(); }
 
 function demanderCode(){
  etat("Code famille à saisir");
@@ -326,7 +422,7 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
  document.getElementById("p-"+b.dataset.p).classList.add("actif");
 });
 document.getElementById("recherche").oninput = ()=>{ dessinerStock(); dessinerAvant(); };
-document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) synchroniser(); });
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden){ dessiner(); synchroniser(); } });
 window.addEventListener("online", ()=>{ if(aEnvoyer) envoyer(); else synchroniser(); });
 
 dessiner();
