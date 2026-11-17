@@ -25,11 +25,13 @@ section.page{display:none;padding:12px}
 section.page.actif{display:block}
 h2{font-size:15px;color:#2f6f5e;text-transform:uppercase;margin:18px 4px 6px}
 .carte{background:#fff;border-radius:12px;padding:12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 2px #0001}
-.carte .nom{flex:1;font-size:17px}
+.carte .nom{flex:1;min-width:0;font-size:17px}
 .carte .info{font-size:12px;color:#777;display:block}
 .carte.bas,.carte.bientot{border-left:6px solid #e08a1e}
 .carte.vide,.carte.perime{border-left:6px solid #c0392b}
 .btn{width:46px;height:46px;border-radius:50%;border:0;font-size:26px;font-weight:700;color:#fff;flex-shrink:0}
+.mini{width:38px;height:38px;border-radius:50%;border:0;font-size:20px;font-weight:700;color:#fff;flex-shrink:0;padding:0}
+.urg{display:inline-block;background:#c0392b;color:#fff;border-radius:6px;font-size:11px;font-weight:700;padding:2px 6px;margin-right:6px;vertical-align:middle}
 .moins{background:#c0392b}
 .plus{background:#2f6f5e}
 .qte{min-width:28px;text-align:center;font-size:20px;font-weight:700}
@@ -43,7 +45,7 @@ input,select,textarea{width:100%;padding:12px;border:1px solid #ccc;border-radiu
 .coche{display:flex;align-items:center;gap:10px}
 .coche input{width:26px;height:26px;flex-shrink:0}
 .fait .nom{text-decoration:line-through;color:#999}
-.saisie-qte{width:72px;text-align:center;flex-shrink:0;padding:10px 4px}
+.saisie-qte{width:60px;text-align:center;flex-shrink:0;padding:10px 4px}
 #fond{position:fixed;inset:0;background:#0007;display:none;z-index:10;align-items:flex-end}
 #fond.ouvert{display:flex}
 #fenetre{background:#f4f1ea;width:100%;max-height:90vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px}
@@ -265,20 +267,41 @@ function retirerLot(id,date,un){
  sauver(); dessiner();
 }
 
+function ligneCourse(a){
+ const urg = a.urgent ? '<span class="urg">URGENT</span>' : '';
+ const info = a.auto ? "stock : "+a.stock+" · conseillé : "+a.manque : "ajout ponctuel";
+ const qte = a.auto ? `<input type="number" inputmode="numeric" min="1" class="saisie-qte" value="${a.qte}" onchange="changerQte('${a.id}',this.value)">` : "";
+ return `<div class="carte ${a.urgent?'perime':''} ${a.fait?'fait':''}"><div class="coche"><input type="checkbox" ${a.fait?'checked':''} onchange="cocher('${a.id}',this.checked)"></div><div class="nom">${urg}${echap(a.nom)}<span class="info">${info}</span></div>${qte}<button class="mini ${a.urgent?'rouge':'gris'}" onclick="basculerUrgent('${a.id}')" aria-label="Urgent">!</button><button class="mini gris" onclick="supprCourse('${a.id}')" aria-label="Retirer de la liste">×</button></div>`;
+}
 function dessinerCourses(){
- const auto = Object.entries(data.univers).filter(([i,u])=>total(u)<=u.seuil || (data.courses["auto_"+i]||{}).voulu).map(([i,u])=>({id:"auto_"+i,nom:u.nom,unite:u.unite,manque:Math.max(1,u.seuil+1-total(u))}));
- const manuel = Object.entries(data.courses).filter(([i,c])=>!i.startsWith("auto_")).map(([i,c])=>({id:i,nom:c.nom,fait:c.fait}));
- let h = '<button class="gros" onclick="formAjoutCourse()">+ Ajouter un produit à la liste</button>';
- h+="<h2>À acheter</h2>";
- h+= auto.map(a=>{
-  const c = data.courses[a.id]||{}; const fait = c.fait; const q = c.qte!=null ? c.qte : a.manque;
-  return `<div class="carte ${fait?'fait':''}"><div class="coche"><input type="checkbox" ${fait?'checked':''} onchange="cocher('${a.id}',this.checked)"></div><div class="nom">${echap(a.nom)}<span class="info">conseillé : ${a.manque} · quantité achetée :</span></div><input type="number" inputmode="numeric" min="1" class="saisie-qte" value="${q}" onchange="changerQte('${a.id}',this.value)"></div>`;
- }).join("") || '<div class="vide-msg">Rien à racheter</div>';
- if(manuel.length){ h+="<h2>Ajouts ponctuels</h2>"+manuel.map(c=>`<div class="carte ${c.fait?'fait':''}"><div class="coche"><input type="checkbox" ${c.fait?'checked':''} onchange="cocher('${c.id}',this.checked)"></div><div class="nom">${echap(c.nom)}</div><button class="btn moins" onclick="supprCourse('${c.id}')">×</button></div>`).join(""); }
- h+= `<button class="gros" onclick="rentrer()">Rentrer les courses cochées au stock</button>
- <p class="note">Cochez ce que vous avez acheté et vérifiez la quantité. Les ajouts ponctuels, sans produit enregistré, ne passent pas dans le stock.</p>`;
+ const items = [];
+ Object.entries(data.courses).forEach(([id,c])=>{
+  if(id.indexOf("auto_")===0){
+   const u = data.univers[id.slice(5)]; if(!u) return;
+   const manque = Math.max(1,u.seuil+1-total(u));
+   items.push({id:id, nom:u.nom, auto:true, urgent:!!c.urgent, fait:!!c.fait, qte:(c.qte!=null?c.qte:manque), manque:manque, stock:total(u)});
+  } else {
+   items.push({id:id, nom:c.nom||"", auto:false, urgent:!!c.urgent, fait:!!c.fait});
+  }
+ });
+ items.sort((a,b)=>(b.urgent-a.urgent) || a.nom.localeCompare(b.nom));
+ let h = '<button class="gros contour" onclick="synchroAvecStock()">Synchroniser avec le stock</button>';
+ h += '<button class="gros" onclick="formAjoutCourse()">+ Ajouter un produit à la liste</button>';
+ h += "<h2>À acheter</h2>";
+ h += items.length ? items.map(ligneCourse).join("") : '<div class="vide-msg">La liste est vide. Touchez « Synchroniser avec le stock » pour ajouter les produits sous leur seuil, ou ajoutez un produit.</div>';
+ h += `<button class="gros" onclick="rentrer()">Rentrer les courses cochées au stock</button>
+ <p class="note">Le champ à droite est la quantité achetée, ajoutée au stock quand vous rentrez les courses. « ! » marque un article urgent, « × » le retire de la liste sans toucher au produit ni au stock.</p>`;
  document.getElementById("p-courses").innerHTML = h;
 }
+function synchroAvecStock(){
+ let n = 0;
+ Object.entries(data.univers).forEach(([id,u])=>{
+  if(total(u)<=u.seuil && !data.courses["auto_"+id]){ data.courses["auto_"+id] = {qte:Math.max(1,u.seuil+1-total(u)), fait:false, urgent:false}; n++; }
+ });
+ if(n){ sauver(); dessiner(); alert(n+" produit(s) ajouté(s) à la liste."); }
+ else { alert("Rien à ajouter : tous les produits sous leur seuil sont déjà dans la liste."); }
+}
+function basculerUrgent(id){ const c = data.courses[id]; if(!c) return; c.urgent = !c.urgent; sauver(); dessiner(); }
 function trouverUnivers(nom){ const n = norm(nom); return Object.entries(data.univers).find(([i,u])=>norm(u.nom)===n); }
 function formAjoutCourse(){
  aSel = null; aCreer = false;
@@ -287,6 +310,7 @@ function formAjoutCourse(){
  <div id="aSug"></div>
  <div id="aInfo" class="note"></div>
  <label>Quantité à acheter</label><input id="aQte" type="number" inputmode="numeric" min="1" value="1">
+ <label class="coche"><input type="checkbox" id="aUrgent"> Urgent / prioritaire</label>
  <div id="aNouv" style="display:none">
   <label>Catégorie</label><select id="aCat">${CATEGORIES.map(c=>`<option>${c}</option>`).join("")}</select>
   <label>Unité (boîte, paquet, rouleau...)</label><input id="aUnite" value="unité">
@@ -326,14 +350,18 @@ function creerNouveau(){
 function validerAjoutCourse(){
  const nom = document.getElementById("aNom").value.trim(); if(!nom){ alert("Indiquez le produit."); return; }
  const n = Math.max(1, parseInt(document.getElementById("aQte").value)||1);
- if(aSel && data.univers[aSel]){ data.courses["auto_"+aSel] = {qte:n, voulu:true, fait:false}; }
+ const urgent = document.getElementById("aUrgent").checked;
+ if(aSel && data.univers[aSel]){
+  const ancien = data.courses["auto_"+aSel] || {};
+  data.courses["auto_"+aSel] = {qte:n, fait:false, urgent:(urgent || !!ancien.urgent)};
+ }
  else if(aCreer){
   if(trouverUnivers(nom)){ alert("Ce produit existe déjà. Choisissez-le dans la liste ou changez l'intitulé."); return; }
-  if(document.getElementById("aUnique").checked){ data.courses["m"+Date.now()] = {nom:nom+(n>1?" x"+n:""), fait:false}; }
+  if(document.getElementById("aUnique").checked){ data.courses["m"+Date.now()] = {nom:nom+(n>1?" x"+n:""), fait:false, urgent:urgent}; }
   else {
    const id = "u"+Date.now();
    data.univers[id] = {nom:nom, cat:document.getElementById("aCat").value, unite:document.getElementById("aUnite").value.trim()||"unité", seuil:parseInt(document.getElementById("aSeuil").value)||0, frais:document.getElementById("aFrais").checked, qte:0, lots:[]};
-   data.courses["auto_"+id] = {qte:n, voulu:true, fait:false};
+   data.courses["auto_"+id] = {qte:n, fait:false, urgent:urgent};
   }
  }
  else { alert("Choisissez un produit dans la liste, ou touchez « créer ... comme nouveau produit »."); return; }
@@ -346,7 +374,7 @@ function rentrer(){
  let frais = [];
  Object.entries(data.courses).forEach(([id,c])=>{
   if(!c.fait) return;
-  if(id.startsWith("auto_")){
+  if(id.indexOf("auto_")===0){
    const uid = id.slice(5); const u = data.univers[uid];
    const n = c.qte!=null ? c.qte : (u ? Math.max(1,u.seuil+1-total(u)) : 1);
    if(u && u.frais){ frais.push({id:uid,n:n}); return; }
